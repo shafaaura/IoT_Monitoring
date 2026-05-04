@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>IoT Monitoring - Shafa</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body { font-family: Arial; background: #ffe0f0; padding: 20px; }
+    h2 { color: #c2185b; text-align: center; margin-bottom: 4px; }
+    p.sub { text-align: center; font-size: 11px; color: #aaa; margin-bottom: 14px; }
+
+    .kotak {
+      background: white;
+      border: 2px solid #f48fb1;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    .kotak h3 { color: #ad1457; margin: 0 0 10px; font-size: 14px; }
+
+    .baris { display: flex; gap: 12px; }
+
+    .nilai-box {
+      flex: 1;
+      background: #fce4ec;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .nilai-box.biru { background: #e3f2fd; }
+    .nilai-box p { font-size: 11px; color: #888; margin: 0 0 4px; }
+    .nilai-box span { font-size: 30px; font-weight: bold; color: #c2185b; }
+    .nilai-box.biru span { color: #1565c0; }
+    .nilai-box small { font-size: 11px; color: #aaa; }
+
+    .led-baris { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .bulat {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: #ddd;
+      border: 2px solid #bbb;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .hijau  { background: #4caf50; border-color: #388e3c; }
+    .kuning { background: #ffeb3b; border-color: #f9a825; }
+    .merah  { background: #f44336; border-color: #c62828; }
+
+    .relay-baris {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid #fce4ec;
+    }
+    .relay-baris:last-child { border-bottom: none; }
+    .relay-nama { font-size: 13px; font-weight: bold; color: #555; }
+
+    .relay-status {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .relay-status.on  { background: #4caf50; color: white; }
+    .relay-status.off { background: #eee; color: #999; }
+
+    .relay-tombol {
+      padding: 5px 12px;
+      border: 2px solid #f48fb1;
+      border-radius: 6px;
+      background: #fff0f5;
+      color: #880e4f;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .relay-tombol:hover { background: #f48fb1; color: white; }
+
+    .koneksi {
+      text-align: center;
+      font-size: 12px;
+      font-weight: bold;
+      padding: 7px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .koneksi.nyambung { background: #e8f5e9; color: #2e7d32; }
+    .koneksi.putus    { background: #ffebee; color: #c62828; }
+    .koneksi.loading  { background: #fff9c4; color: #f57f17; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f48fb1; color: white; padding: 6px; text-align: center; }
+    td { padding: 6px; text-align: center; border-bottom: 1px solid #fce4ec; color: #444; }
+    tr:nth-child(even) { background: #fff0f8; }
+
+    .btn-hapus {
+      display: block;
+      margin: 8px 0 0 auto;
+      padding: 5px 14px;
+      background: #ffebee;
+      border: 2px solid #f44336;
+      border-radius: 6px;
+      color: #c62828;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-hapus:hover { background: #f44336; color: white; }
+  </style>
+</head>
+<body>
+
+<h2>🌸 IoT Monitoring</h2>
+<p class="sub">HiveMQ Cloud | smk/iot/sensorsuhu4 & sensorkelembaban4</p>
+
+<div class="koneksi loading" id="status">⏳ Menghubungkan ke MQTT...</div>
+
+<!-- SENSOR -->
+<div class="kotak">
+  <h3>📡 Data Sensor DHT11</h3>
+  <div class="baris">
+    <div class="nilai-box">
+      <p>Suhu</p>
+      <span id="suhu">--</span>
+      <br><small>°C</small>
+    </div>
+    <div class="nilai-box biru">
+      <p>Kelembapan</p>
+      <span id="hum">--</span>
+      <br><small>%</small>
+    </div>
+  </div>
+</div>
+
+<!-- LED -->
+<div class="kotak">
+  <h3>💡 Indikator LED Suhu</h3>
+  <div class="led-baris">
+    <div class="bulat" id="l1"></div>
+    <span style="font-size:13px">Hijau — Suhu &lt; 30°C</span>
+  </div>
+  <div class="led-baris">
+    <div class="bulat" id="l2"></div>
+    <span style="font-size:13px">Kuning — 30°C s/d 34°C</span>
+  </div>
+  <div class="led-baris">
+    <div class="bulat" id="l3"></div>
+    <span style="font-size:13px">Merah — ≥ 35°C</span>
+  </div>
+</div>
+
+<!-- RELAY -->
+<div class="kotak">
+  <h3>🔌 Kontrol Relay</h3>
+  <div class="relay-baris">
+    <span class="relay-nama">Relay 1</span>
+    <span id="rs1" class="relay-status off">OFF</span>
+    <button class="relay-tombol" onclick="klikRelay(0)">ON / OFF</button>
+  </div>
+  <div class="relay-baris">
+    <span class="relay-nama">Relay 2</span>
+    <span id="rs2" class="relay-status off">OFF</span>
+    <button class="relay-tombol" onclick="klikRelay(1)">ON / OFF</button>
+  </div>
+  <div class="relay-baris">
+    <span class="relay-nama">Relay 3</span>
+    <span id="rs3" class="relay-status off">OFF</span>
+    <button class="relay-tombol" onclick="klikRelay(2)">ON / OFF</button>
+  </div>
+  <div class="relay-baris">
+    <span class="relay-nama">Relay 4</span>
+    <span id="rs4" class="relay-status off">OFF</span>
+    <button class="relay-tombol" onclick="klikRelay(3)">ON / OFF</button>
+  </div>
+</div>
+
+<!-- RIWAYAT -->
+<div class="kotak">
+  <h3>📋 Riwayat Data</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>No</th>
+        <th>Waktu</th>
+        <th>Suhu (°C)</th>
+        <th>Kelembapan (%)</th>
+        <th>Indikator</th>
+      </tr>
+    </thead>
+    <tbody id="tabel-riwayat">
+      <tr><td colspan="5" style="color:#aaa">Menunggu data...</td></tr>
+    </tbody>
+  </table>
+  <button class="btn-hapus" onclick="hapusRiwayat()">🗑 Hapus Riwayat</button>
+</div>
+
+<p style="text-align:center;font-size:10px;color:#bbb" id="waktu">—</p>
+
+<script>
+  // ===================================================
+  // KONFIGURASI — sesuaikan dengan kode Arduino kamu
+  // ===================================================
+  const BROKER     = "wss://xxxx.s1.eu.hivemq.cloud:8884/mqtt"; // GANTI xxxx
+  const USERNAME   = "username_kamu";   // GANTI sesuai Arduino
+  const PASSWORD   = "password_kamu";   // GANTI sesuai Arduino
+
+  const TOPIC_SUHU = "smk/iot/sensorsuhu4";
+  const TOPIC_HUM  = "smk/iot/sensorkelembaban4";
+  const TOPIC_CTRL = "smk/iot/control4";
+  // ===================================================
+
+  let relay   = [false, false, false, false];
+  let riwayat = [];
+  let suhuTerakhir = null;
+  let humTerakhir  = null;
+
+  // ===== KONEKSI MQTT =====
+  const client = mqtt.connect(BROKER, {
+    clientId: "web_shafa_" + Math.random().toString(16).substr(2, 6),
+    username: USERNAME,
+    password: PASSWORD,
+    reconnectPeriod: 3000
+  });
+
+  client.on("connect", () => {
+    const el = document.getElementById("status");
+    el.textContent = "✅ Terhubung ke HiveMQ Cloud";
+    el.className = "koneksi nyambung";
+    client.subscribe(TOPIC_SUHU);
+    client.subscribe(TOPIC_HUM);
+  });
+
+  client.on("error", () => {
+    const el = document.getElementById("status");
+    el.textContent = "❌ Gagal terhubung ke MQTT";
+    el.className = "koneksi putus";
+  });
+
+  client.on("reconnect", () => {
+    const el = document.getElementById("status");
+    el.textContent = "⏳ Mencoba konek ulang...";
+    el.className = "koneksi loading";
+  });
+
+  // ===== TERIMA PESAN =====
+  client.on("message", (topic, message) => {
+    const val = parseFloat(message.toString());
+    if (isNaN(val)) return;
+
+    if (topic === TOPIC_SUHU) {
+      suhuTerakhir = val;
+      document.getElementById("suhu").textContent = val.toFixed(1);
+      updateLED(val);
+    }
+
+    if (topic === TOPIC_HUM) {
+      humTerakhir = val;
+      document.getElementById("hum").textContent = val.toFixed(1);
+    }
+
+    // Simpan riwayat kalau sudah dapat keduanya
+    if (suhuTerakhir !== null && humTerakhir !== null) {
+      const waktu = new Date().toLocaleTimeString("id-ID");
+      document.getElementById("waktu").textContent = "Update: " + waktu;
+
+      // Indikator sesuai logika Arduino
+      let indikator = "-";
+      if      (suhuTerakhir < 30) indikator = "🟢 Hijau";
+      else if (suhuTerakhir < 35) indikator = "🟡 Kuning";
+      else                         indikator = "🔴 Merah";
+
+      riwayat.unshift({
+        waktu,
+        suhu: suhuTerakhir.toFixed(1),
+        hum:  humTerakhir.toFixed(1),
+        indikator
+      });
+
+      if (riwayat.length > 20) riwayat.pop();
+      renderRiwayat();
+
+      suhuTerakhir = null;
+      humTerakhir  = null;
+    }
+  });
+
+  // ===== UPDATE LED =====
+  // Sesuai logika Arduino: <30 hijau | <35 kuning | >=35 merah
+  function updateLED(suhu) {
+    document.getElementById("l1").className = "bulat";
+    document.getElementById("l2").className = "bulat";
+    document.getElementById("l3").className = "bulat";
+
+    if      (suhu < 30) document.getElementById("l1").className = "bulat hijau";
+    else if (suhu < 35) document.getElementById("l2").className = "bulat kuning";
+    else                document.getElementById("l3").className = "bulat merah";
+  }
+
+  // ===== KONTROL RELAY =====
+  // Format sesuai Arduino callback: R1_ON, R1_OFF, dst
+  function klikRelay(i) {
+    relay[i] = !relay[i];
+
+    const el = document.getElementById("rs" + (i + 1));
+    el.textContent = relay[i] ? "ON" : "OFF";
+    el.className   = relay[i] ? "relay-status on" : "relay-status off";
+
+    const pesan = "R" + (i + 1) + "_" + (relay[i] ? "ON" : "OFF");
+    client.publish(TOPIC_CTRL, pesan);
+  }
+
+  // ===== RENDER TABEL =====
+  function renderRiwayat() {
+    const tbody = document.getElementById("tabel-riwayat");
+    if (riwayat.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#aaa">Belum ada data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = riwayat.map((d, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${d.waktu}</td>
+        <td>${d.suhu}</td>
+        <td>${d.hum}</td>
+        <td>${d.indikator}</td>
+      </tr>
+    `).join("");
+  }
+
+  // ===== HAPUS RIWAYAT =====
+  function hapusRiwayat() {
+    riwayat = [];
+    renderRiwayat();
+  }
+</script>
+
+</body>
+</html>
